@@ -1,4 +1,5 @@
-use std::fmt;
+use std::{fmt};
+use std::io::{self, Write};
 
 #[derive(Debug, Clone)]
 enum Buffer {
@@ -26,8 +27,8 @@ pub struct PieceTable {
 impl fmt::Display for PieceTable {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut result: String = "".to_string();
-        for each_entry in &self.which {
-            result += &format!("{}, ", each_entry).as_str();
+        for each_index in 0..self.which.len() {
+            result += &format!("{} | {} | {}\n", &self.which[each_index], &self.start[each_index], &self.end[each_index]).as_str();
         }
         write!(f, "{}", result.as_str())
     }
@@ -57,6 +58,13 @@ fn test_text() {
     println!("{}", read_table(&piece_table, &original_buffer, &add_buffer));
     println!("Original buffer: {}", original_buffer);
     println!("Add buffer: {}", add_buffer);
+    println!("{}", piece_table);
+}
+
+fn delete_text(mut piece_table: PieceTable, delete_start: usize, delete_end: usize) -> PieceTable {
+    
+
+    piece_table
 }
 
 fn insert_table(mut add_buffer: String, mut piece_table: PieceTable, insertion_text: &String, insert_index: usize) -> (String, PieceTable) {
@@ -118,6 +126,58 @@ fn read_table(piece_table: &PieceTable, original_buffer: &String, add_buffer: &S
     message
 }
 
+fn cursor_left(move_by: i32) {
+    print!("\x1B[{}D", move_by);
+    io::stdout().flush().unwrap();
+}
+
+fn cursor_right(move_by: i32) {
+    print!("\x1B[{}C", move_by);
+    io::stdout().flush().unwrap();
+}
+
+fn cursor_up(move_by: i32) {
+    print!("\x1B[{}A", move_by);
+    io::stdout().flush().unwrap();
+}
+
+fn cursor_down(move_by: i32) {
+    print!("\x1B[{}B", move_by);
+    io::stdout().flush().unwrap();
+}
+
+fn make_text_red(text: &String) -> String {
+    format!("\x1b[31m{}\x1b[0m", &text)
+}
+
+fn make_text_green(text: &String) -> String {
+    format!("\x1b[32m{}\x1b[0m", &text)
+}
+
+fn make_text_blue(text: &String) -> String {
+    format!("\x1b[34m{}\x1b[0m", &text)
+}
+
+fn clear_screen() {
+    print!("\x1B[2J\x1B[1;1H");
+    io::stdout().flush().unwrap();
+}
+
 fn main() {
     test_text();
+    clear_screen();
+    println!("{}", make_text_red(&"This sentence is red.".to_string()));
+    println!("{}", make_text_green(&"This sentence is green".to_string()));
+    println!("{}", make_text_blue(&"This sentence is blue!".to_string()));
+    cursor_up(2);
+    cursor_right(7);
+    print!("aaaa");
+    io::stdout().flush().unwrap();
+    cursor_up(1);
+    cursor_left(7);
+    print!("bb");
+    io::stdout().flush().unwrap();
+    loop {
+        continue;
+    }
 }
