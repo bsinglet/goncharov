@@ -41,6 +41,23 @@ impl fmt::Display for PieceTable {
     }
 }
 
+#[derive(Debug)]
+pub struct CursorState {
+    desired_x: usize,
+    x: usize,
+    y: usize,
+    clip_right: bool,
+}
+
+impl fmt::Display for CursorState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut result: String = format!("desired_x: {}", &self.desired_x);
+        result += format!("(x, y): ({},{})", &self.x, &self.y).as_str();
+        result += format!("clip_right: {}", &self.clip_right).as_str();
+        write!(f, "{}", result.as_str())
+    }
+}
+
 fn test_text() {
     let mut piece_table: PieceTable = PieceTable{
         which: Vec::new(),
@@ -178,6 +195,44 @@ fn clear_screen() {
     io::stdout().flush().unwrap();
 }
 
+fn get_position_of_offset(message: &String, offset: usize) -> (usize, usize) {
+    let mut x: usize = 0;
+    let mut y: usize = 0;
+    let mut current_offset: usize = 0;
+    for each_character in message.as_bytes() {
+        if current_offset == offset {
+            break;
+        }
+        if each_character == &('\n' as u8) {
+            y += 1;
+            x = 0;
+        }else {
+            x += 1;
+        }
+        current_offset += 1;
+    }
+    (x, y)
+}
+
+fn get_offset_of_position(message: &String, pos_x: usize, pos_y: usize) -> usize {
+    let mut x: usize = 0;
+    let mut y: usize = 0;
+    let mut current_offset: usize = 0;
+    for each_character in message.as_bytes() {
+        if y == pos_y && x == pos_x {
+            break;
+        }
+        if each_character == &('\n' as u8) {
+            y += 1;
+            x = 0;
+        }else {
+            x += 1;
+        }
+        current_offset += 1;
+    }
+    current_offset
+}
+
 fn main() {
     let mut piece_table: PieceTable = PieceTable{
         which: Vec::new(),
@@ -187,6 +242,13 @@ fn main() {
     let mut original_buffer: String = "".to_string();
     let mut add_buffer: String = "".to_string();
     let mut running_buffer: String = "".to_string();
+    let mut cursor_state: CursorState = CursorState{
+        desired_x: 0,
+        x: 0,
+        y: 1,
+        clip_right: false,
+    };
+    let mut line_offset: usize = 0;
     let mut stdout = stdout();
     enable_raw_mode().unwrap();
 
@@ -195,7 +257,7 @@ fn main() {
         println!("{}", make_text_green(&"Welcome to Goncharov!".to_string()));
         print!("{}", read_table(&piece_table, &original_buffer, &add_buffer));
         println!("{}", running_buffer);
-        //execute!(stdout, cursor::MoveTo(0, 1)).unwrap();
+        execute!(stdout, cursor::MoveTo(cursor_state.x as u16, (cursor_state.y - line_offset) as u16)).unwrap();
         match read().unwrap() {
             Event::Key(KeyEvent {
                 code: KeyCode::Char('h'),
@@ -210,24 +272,57 @@ fn main() {
                 modifiers: KeyModifiers::CONTROL,
             }) => break,
             Event::Key(KeyEvent {
+                code: KeyCode::Left,
+                modifiers: _,
+            }) => {
+                // first we have to commit the working buffer to the piece table
+                if running_buffer.len() > 0 {
+                    let insert_index: usize = get_offset_of_position(&read_table(&piece_table, &original_buffer, &add_buffer), cursor_state.x, cursor_state.y + line_offset);
+                    (add_buffer, piece_table) = insert_table(add_buffer, piece_table, &running_buffer, insert_index);
+                    running_buffer = "".to_string();
+                }
+                // now we can actually update the cursor and related variables
+                if cursor_state.x == 0 {
+                    if cursor_state.y > 0 {
+                        let offset: usize = get_offset_of_position(&read_table(&piece_table, &original_buffer, &add_buffer), cursor_state.x, cursor_state.y + line_offset) - 1;
+                        (cursor_state.x, cursor_state.y) = get_position_of_offset(&read_table(&piece_table, &original_buffer, &add_buffer), offset);
+                        // don't forget to take pagination into consideration. Absolute length may not be the real height on screen
+                        cursor_state.y -= line_offset;
+                        cursor_state.desired_x = cursor_state.x;
+                        cursor_state.clip_right = true;
+                    }
+                }else {
+                    cursor_state.x -= 1;
+                    cursor_state.desired_x = cursor_state.x;
+                    cursor_state.clip_right = false;
+                }
+            },
+            Event::Key(KeyEvent {
                 code: c,
                 modifiers: m
             }) => {
                 match c {
                     KeyCode::Char(' ') => {
-                        let insert_index: usize = get_table_length(&piece_table);
+                        let insert_index: usize = get_offset_of_position(&read_table(&piece_table, &original_buffer, &add_buffer), cursor_state.x, cursor_state.y + line_offset);
                         running_buffer.push(' ');
                         (add_buffer, piece_table) = insert_table(add_buffer, piece_table, &running_buffer, insert_index);
                         running_buffer = "".to_string();
+                        cursor_state.desired_x += 1;
+                        cursor_state.x += 1;
                     },
                     KeyCode::Enter => {
-                        let insert_index: usize = get_table_length(&piece_table);
+                        let insert_index: usize = get_offset_of_position(&read_table(&piece_table, &original_buffer, &add_buffer), cursor_state.x, cursor_state.y + line_offset);
                         running_buffer.push('\n');
                         (add_buffer, piece_table) = insert_table(add_buffer, piece_table, &running_buffer, insert_index);
                         running_buffer = "".to_string();
+                        cursor_state.desired_x = 0;
+                        cursor_state.x = 0;
+                        cursor_state.y += 1;
                     },
                     KeyCode::Char(c) => {
                         running_buffer.push(c);
+                        cursor_state.desired_x += 1;
+                        cursor_state.x += 1;
                     },
                     _ => (),
                 }
