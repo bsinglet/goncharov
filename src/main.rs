@@ -1,5 +1,12 @@
+#[macro_use]
+extern crate crossterm;
+
 use std::{fmt};
-use std::io::{self, Write};
+use std::io::{self, stdout, Write};
+use crossterm::cursor;
+use crossterm::event::{self, read, Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::style::Print;
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType};
 
 #[derive(Debug, Clone)]
 enum Buffer {
@@ -126,6 +133,14 @@ fn read_table(piece_table: &PieceTable, original_buffer: &String, add_buffer: &S
     message
 }
 
+fn get_table_length(piece_table: &PieceTable) -> usize {
+    let mut table_length: usize = 0;
+    for each_index in 0..piece_table.which.len() {
+        table_length += piece_table.end[each_index] - piece_table.start[each_index];
+    }
+    table_length
+}
+
 fn cursor_left(move_by: i32) {
     print!("\x1B[{}D", move_by);
     io::stdout().flush().unwrap();
@@ -164,20 +179,66 @@ fn clear_screen() {
 }
 
 fn main() {
-    test_text();
-    clear_screen();
-    println!("{}", make_text_red(&"This sentence is red.".to_string()));
-    println!("{}", make_text_green(&"This sentence is green".to_string()));
-    println!("{}", make_text_blue(&"This sentence is blue!".to_string()));
-    cursor_up(2);
-    cursor_right(7);
-    print!("aaaa");
-    io::stdout().flush().unwrap();
-    cursor_up(1);
-    cursor_left(7);
-    print!("bb");
-    io::stdout().flush().unwrap();
+    let mut piece_table: PieceTable = PieceTable{
+        which: Vec::new(),
+        start: Vec::new(),
+        end: Vec::new(),
+    };
+    let mut original_buffer: String = "".to_string();
+    let mut add_buffer: String = "".to_string();
+    let mut running_buffer: String = "".to_string();
+    let mut stdout = stdout();
+    enable_raw_mode().unwrap();
+
     loop {
-        continue;
+        execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
+        println!("{}", make_text_green(&"Welcome to Goncharov!".to_string()));
+        print!("{}", read_table(&piece_table, &original_buffer, &add_buffer));
+        println!("{}", running_buffer);
+        //execute!(stdout, cursor::MoveTo(0, 1)).unwrap();
+        match read().unwrap() {
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('h'),
+                modifiers: KeyModifiers::CONTROL,
+            }) => execute!(stdout, Clear(ClearType::All), Print("This is a minimalist text editor.")).unwrap(),
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('k'),
+                modifiers: KeyModifiers::ALT,
+            }) => execute!(stdout, Clear(ClearType::All), Print("You typed alt-k")).unwrap(),
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('q'),
+                modifiers: KeyModifiers::CONTROL,
+            }) => break,
+            Event::Key(KeyEvent {
+                code: c,
+                modifiers: m
+            }) => {
+                match c {
+                    KeyCode::Char(' ') => {
+                        let insert_index: usize = get_table_length(&piece_table);
+                        running_buffer.push(' ');
+                        (add_buffer, piece_table) = insert_table(add_buffer, piece_table, &running_buffer, insert_index);
+                        running_buffer = "".to_string();
+                    },
+                    KeyCode::Enter => {
+                        let insert_index: usize = get_table_length(&piece_table);
+                        running_buffer.push('\n');
+                        (add_buffer, piece_table) = insert_table(add_buffer, piece_table, &running_buffer, insert_index);
+                        running_buffer = "".to_string();
+                    },
+                    KeyCode::Char(c) => {
+                        running_buffer.push(c);
+                    },
+                    _ => (),
+                }
+            },
+            _ => (),
+        }
     }
+    println!("{}", read_table(&piece_table, &original_buffer, &add_buffer));
+    println!("Original buffer: {}", original_buffer);
+    println!("Add buffer: {}", add_buffer);
+    println!("{}", piece_table);
+
+    disable_raw_mode().unwrap();
 }
