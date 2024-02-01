@@ -266,10 +266,10 @@ fn main() {
         println!("{}", make_text_green(&"Welcome to Goncharov!".to_string()));
         display_buffer = read_table(&piece_table, &original_buffer, &add_buffer);
         //print!("display buffer before insert: {}", display_buffer);
-        display_buffer = insert_string(&display_buffer, &running_buffer, get_offset_of_position(&display_buffer, cursor_state.x, cursor_state.y));
+        display_buffer = insert_string(&display_buffer, &running_buffer, insert_index);
         //println!("display buffer after  insert: {}", display_buffer);
         //println!("cursor position: ({}, {})", cursor_state.x, cursor_state.y);
-        print!("{}", display_buffer);
+        println!("{}", display_buffer);
         execute!(stdout, cursor::MoveTo(cursor_state.x as u16, (cursor_state.y - line_offset + 1) as u16)).unwrap();
         match read().unwrap() {
             Event::Key(KeyEvent {
@@ -351,6 +351,7 @@ fn main() {
             _ => (),
         }
     }
+    print!("\n\n");
     println!("{}", read_table(&piece_table, &original_buffer, &add_buffer));
     println!("Original buffer: {}", original_buffer);
     println!("Add buffer: {}", add_buffer);
