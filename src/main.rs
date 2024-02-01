@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate crossterm;
 
-use std::{fmt};
+use std::fmt;
 use std::io::{self, stdout, Write};
 use crossterm::cursor;
 use crossterm::event::{self, read, Event, KeyCode, KeyEvent, KeyModifiers};
@@ -233,6 +233,13 @@ fn get_offset_of_position(message: &String, pos_x: usize, pos_y: usize) -> usize
     current_offset
 }
 
+fn insert_string(original: &String, insert: &String, pos: usize) -> String {
+    let mut original_vec: Vec<char> = original.chars().collect();
+    let insert_vec: Vec<char> = insert.chars().collect();
+    original_vec.splice(pos..pos, insert_vec);
+    original_vec.into_iter().collect()
+}
+
 fn main() {
     let mut piece_table: PieceTable = PieceTable{
         which: Vec::new(),
@@ -242,22 +249,28 @@ fn main() {
     let mut original_buffer: String = "".to_string();
     let mut add_buffer: String = "".to_string();
     let mut running_buffer: String = "".to_string();
+    let mut display_buffer: String = "".to_string();
     let mut cursor_state: CursorState = CursorState{
         desired_x: 0,
         x: 0,
-        y: 1,
+        y: 0,
         clip_right: false,
     };
     let mut line_offset: usize = 0;
     let mut stdout = stdout();
     enable_raw_mode().unwrap();
+    let mut insert_index: usize = 0;
 
     loop {
         execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
         println!("{}", make_text_green(&"Welcome to Goncharov!".to_string()));
-        print!("{}", read_table(&piece_table, &original_buffer, &add_buffer));
-        println!("{}", running_buffer);
-        execute!(stdout, cursor::MoveTo(cursor_state.x as u16, (cursor_state.y - line_offset) as u16)).unwrap();
+        display_buffer = read_table(&piece_table, &original_buffer, &add_buffer);
+        //print!("display buffer before insert: {}", display_buffer);
+        display_buffer = insert_string(&display_buffer, &running_buffer, get_offset_of_position(&display_buffer, cursor_state.x, cursor_state.y));
+        //println!("display buffer after  insert: {}", display_buffer);
+        //println!("cursor position: ({}, {})", cursor_state.x, cursor_state.y);
+        print!("{}", display_buffer);
+        execute!(stdout, cursor::MoveTo(cursor_state.x as u16, (cursor_state.y - line_offset + 1) as u16)).unwrap();
         match read().unwrap() {
             Event::Key(KeyEvent {
                 code: KeyCode::Char('h'),
@@ -277,13 +290,15 @@ fn main() {
             }) => {
                 // first we have to commit the working buffer to the piece table
                 if running_buffer.len() > 0 {
-                    let insert_index: usize = get_offset_of_position(&read_table(&piece_table, &original_buffer, &add_buffer), cursor_state.x, cursor_state.y + line_offset);
                     (add_buffer, piece_table) = insert_table(add_buffer, piece_table, &running_buffer, insert_index);
                     running_buffer = "".to_string();
+                    if insert_index > 0 {
+                        insert_index -= 1;
+                    }
                 }
                 // now we can actually update the cursor and related variables
                 if cursor_state.x == 0 {
-                    if cursor_state.y > 0 {
+                    if cursor_state.y > 1 {
                         let offset: usize = get_offset_of_position(&read_table(&piece_table, &original_buffer, &add_buffer), cursor_state.x, cursor_state.y + line_offset) - 1;
                         (cursor_state.x, cursor_state.y) = get_position_of_offset(&read_table(&piece_table, &original_buffer, &add_buffer), offset);
                         // don't forget to take pagination into consideration. Absolute length may not be the real height on screen
@@ -292,6 +307,7 @@ fn main() {
                         cursor_state.clip_right = true;
                     }
                 }else {
+                    // moving the cursor on the current line is easy
                     cursor_state.x -= 1;
                     cursor_state.desired_x = cursor_state.x;
                     cursor_state.clip_right = false;
@@ -301,17 +317,22 @@ fn main() {
                 code: c,
                 modifiers: m
             }) => {
+                // catch-all for spaces, newlines, and characters to add to the buffer
+                // keep track of where we started typing on the screen. You can't insert by the cursor position
+                // because the cursor will move as you type, but we're not committing each character to the
+                // piece table one at a time.
+                if running_buffer.len() == 0 {
+                    insert_index = get_offset_of_position(&read_table(&piece_table, &original_buffer, &add_buffer), cursor_state.x, cursor_state.y + line_offset);
+                }
                 match c {
                     KeyCode::Char(' ') => {
-                        let insert_index: usize = get_offset_of_position(&read_table(&piece_table, &original_buffer, &add_buffer), cursor_state.x, cursor_state.y + line_offset);
                         running_buffer.push(' ');
                         (add_buffer, piece_table) = insert_table(add_buffer, piece_table, &running_buffer, insert_index);
                         running_buffer = "".to_string();
-                        cursor_state.desired_x += 1;
                         cursor_state.x += 1;
+                        cursor_state.desired_x = cursor_state.x;
                     },
                     KeyCode::Enter => {
-                        let insert_index: usize = get_offset_of_position(&read_table(&piece_table, &original_buffer, &add_buffer), cursor_state.x, cursor_state.y + line_offset);
                         running_buffer.push('\n');
                         (add_buffer, piece_table) = insert_table(add_buffer, piece_table, &running_buffer, insert_index);
                         running_buffer = "".to_string();
