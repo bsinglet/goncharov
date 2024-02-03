@@ -233,6 +233,29 @@ fn get_offset_of_position(message: &String, pos_x: usize, pos_y: usize) -> usize
     current_offset
 }
 
+fn get_width_of_line(message: &String, pos_y: usize) -> usize {
+    let mut x: usize = 0;
+    let mut y: usize = 0;
+    let mut last_line_length: usize = 0;
+    let mut current_offset: usize = 0;
+    for each_character in message.as_bytes() {
+        if y == pos_y + 1 {
+            break;
+        }
+        if each_character == &('\n' as u8) {
+            if y == pos_y {
+                return x;
+            }
+            y += 1;
+            x = 0;
+        }else {
+            x += 1;
+        }
+        current_offset += 1;
+    }
+    x
+}
+
 fn insert_string(original: &String, insert: &String, pos: usize) -> String {
     let mut original_vec: Vec<char> = original.chars().collect();
     let insert_vec: Vec<char> = insert.chars().collect();
@@ -299,18 +322,44 @@ fn main() {
                 // now we can actually update the cursor and related variables
                 if cursor_state.x == 0 {
                     if cursor_state.y > 1 {
-                        let offset: usize = get_offset_of_position(&read_table(&piece_table, &original_buffer, &add_buffer), cursor_state.x, cursor_state.y + line_offset) - 1;
-                        (cursor_state.x, cursor_state.y) = get_position_of_offset(&read_table(&piece_table, &original_buffer, &add_buffer), offset);
+                        (cursor_state.x, cursor_state.y) = get_position_of_offset(&read_table(&piece_table, &original_buffer, &add_buffer), insert_index);
                         // don't forget to take pagination into consideration. Absolute length may not be the real height on screen
                         cursor_state.y -= line_offset;
                         cursor_state.desired_x = cursor_state.x;
-                        cursor_state.clip_right = true;
                     }
                 }else {
                     // moving the cursor on the current line is easy
                     cursor_state.x -= 1;
                     cursor_state.desired_x = cursor_state.x;
-                    cursor_state.clip_right = false;
+                }
+            },
+            Event::Key(KeyEvent {
+                code: KeyCode::Right,
+                modifiers: _,
+            }) => {
+                // first we have to commit the working buffer to the piece table
+                if running_buffer.len() > 0 {
+                    (add_buffer, piece_table) = insert_table(add_buffer, piece_table, &running_buffer, insert_index);
+                    // update the insert position to the *end* of the running_buffer
+                    if insert_index < read_table(&piece_table, &original_buffer, &add_buffer).len() + running_buffer.len() {
+                        insert_index += running_buffer.len();
+                    }
+                    running_buffer = "".to_string();
+                }
+                // now we can actually update the cursor and related variables
+                if cursor_state.x >= get_width_of_line(&read_table(&piece_table, &original_buffer, &add_buffer), cursor_state.y + line_offset) {
+                    if insert_index + 1 < read_table(&piece_table, &original_buffer, &add_buffer).len() {
+                        (cursor_state.x, cursor_state.y) = get_position_of_offset(&read_table(&piece_table, &original_buffer, &add_buffer), insert_index);
+                        // don't forget to take pagination into consideration. Absolute length may not be the real height on screen
+                        cursor_state.y -= line_offset;
+                        cursor_state.desired_x = cursor_state.x;
+                    } else {
+                        // do nothing when you're at the end of the last line
+                    }
+                } else {
+                    // moving the cursor on the current line is easy
+                    cursor_state.x += 1;
+                    cursor_state.desired_x = cursor_state.x;
                 }
             },
             Event::Key(KeyEvent {
