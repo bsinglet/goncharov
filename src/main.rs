@@ -315,17 +315,19 @@ fn main() {
                 if running_buffer.len() > 0 {
                     (add_buffer, piece_table) = insert_table(add_buffer, piece_table, &running_buffer, insert_index);
                     running_buffer = "".to_string();
-                    if insert_index > 0 {
-                        insert_index -= 1;
-                    }
+                }
+                if insert_index > 0 {
+                    insert_index -= 1;
                 }
                 // now we can actually update the cursor and related variables
                 if cursor_state.x == 0 {
-                    if cursor_state.y > 1 {
+                    if cursor_state.y > 0 {
                         (cursor_state.x, cursor_state.y) = get_position_of_offset(&read_table(&piece_table, &original_buffer, &add_buffer), insert_index);
                         // don't forget to take pagination into consideration. Absolute length may not be the real height on screen
                         cursor_state.y -= line_offset;
                         cursor_state.desired_x = cursor_state.x;
+                    } else {
+                        // don't try to move beyond the start of the document
                     }
                 }else {
                     // moving the cursor on the current line is easy
@@ -407,4 +409,81 @@ fn main() {
     println!("{}", piece_table);
 
     disable_raw_mode().unwrap();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_position_of_offset_01() {
+        let message = "a\nb\n\naaa\naaa".to_string();
+        assert_eq!(get_position_of_offset(&message, 0), (0, 0));
+    }
+
+    #[test]
+    fn test_get_position_of_offset_02() {
+        let message = "a\nb\n\naaa\naaa".to_string();
+        assert_eq!(get_position_of_offset(&message, 1), (1, 0));
+    }
+
+    #[test]
+    fn test_get_position_of_offset_03() {
+        let message = "a\nb\n\naaa\naaa".to_string();
+        assert_eq!(get_position_of_offset(&message, 2), (0, 1));
+    }
+
+    #[test]
+    fn test_get_position_of_offset_04() {
+        let message = "a\nb\n\naaa\naaa".to_string();
+        assert_eq!(get_position_of_offset(&message, 5), (0, 3));
+    }
+
+    #[test]
+    fn test_get_position_of_offset_05() {
+        let message = "a\nb\n\naaa\naaa".to_string();
+        assert_eq!(get_position_of_offset(&message, 8), (3, 3));
+    }
+
+    #[test]
+    fn test_get_position_of_offset_06() {
+        let message = "a\nb\n\naaa\naaa".to_string();
+        assert_eq!(get_position_of_offset(&message, 9), (0, 4));
+    }
+
+    #[test]
+    fn test_get_offset_of_position_01() {
+        let message = "a\nb\n\naaa\naaa".to_string();
+        assert_eq!(get_offset_of_position(&message, 0, 0), 0);
+    }
+
+    #[test]
+    fn test_get_offset_of_position_02() {
+        let message = "a\nb\n\naaa\naaa".to_string();
+        assert_eq!(get_offset_of_position(&message, 1, 0), 1);
+    }
+
+    #[test]
+    fn test_get_offset_of_position_03() {
+        let message = "a\nb\n\naaa\naaa".to_string();
+        assert_eq!(get_offset_of_position(&message, 0, 1), 2);
+    }
+
+    #[test]
+    fn test_get_offset_of_position_04() {
+        let message = "a\nb\n\naaa\naaa".to_string();
+        assert_eq!(get_offset_of_position(&message, 0, 3), 5);
+    }
+
+    #[test]
+    fn test_get_offset_of_position_05() {
+        let message = "a\nb\n\naaa\naaa".to_string();
+        assert_eq!(get_offset_of_position(&message, 3, 3), 8);
+    }
+
+    #[test]
+    fn test_get_offset_of_position_06() {
+        let message = "a\nb\n\naaa\naaa".to_string();
+        assert_eq!(get_offset_of_position(&message, 0, 4), 9);
+    }
 }
