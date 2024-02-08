@@ -2,7 +2,10 @@
 extern crate crossterm;
 
 use std::fmt;
+use std::fs::File;
 use std::io::{self, stdout, Write};
+//use std::io::prelude::*;
+use std::io::BufWriter;
 use crossterm::cursor;
 use crossterm::event::{self, read, Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::style::Print;
@@ -299,6 +302,7 @@ fn update_editor_state(mut editor_state: EditorState) -> EditorState {
             // first we have to commit the working buffer to the piece table
             if editor_state.running_buffer.len() > 0 {
                 (editor_state.add_buffer, editor_state.piece_table) = insert_table(editor_state.add_buffer, editor_state.piece_table, &editor_state.running_buffer, editor_state.insert_index);
+                editor_state.insert_index += editor_state.running_buffer.len();
                 editor_state.running_buffer = "".to_string();
             }
             if editor_state.insert_index > 0 {
@@ -371,6 +375,7 @@ fn update_editor_state(mut editor_state: EditorState) -> EditorState {
                 KeyCode::Enter => {
                     editor_state.running_buffer.push('\n');
                     (editor_state.add_buffer, editor_state.piece_table) = insert_table(editor_state.add_buffer, editor_state.piece_table, &editor_state.running_buffer, editor_state.insert_index);
+                    editor_state.insert_index += editor_state.running_buffer.len();
                     editor_state.running_buffer = "".to_string();
                     editor_state.cursor_state.desired_x = 0;
                     editor_state.cursor_state.x = 0;
@@ -388,6 +393,15 @@ fn update_editor_state(mut editor_state: EditorState) -> EditorState {
     }
     disable_raw_mode().unwrap();
     editor_state
+}
+
+fn save_editor_states(state_history: Vec<EditorState>) {
+    let out_file = File::create("editor_state_history.txt").unwrap();
+    let mut writer = BufWriter::new(out_file);
+
+    for state in state_history {
+        writeln!(writer, "{:?}\n\n", state).unwrap();
+    }
 }
 
 fn main() {
@@ -423,6 +437,8 @@ fn main() {
         quit: false,
     };
 
+    let mut state_history: Vec<EditorState> = Vec::new();
+
     loop {
         execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
         println!("{}", make_text_green(&"Welcome to Goncharov!".to_string()));
@@ -434,6 +450,8 @@ fn main() {
         println!("{}", editor_state.display_buffer);
         execute!(stdout, cursor::MoveTo(editor_state.cursor_state.x as u16, (editor_state.cursor_state.y - editor_state.line_offset + 1) as u16)).unwrap();
         editor_state = update_editor_state(editor_state);
+        // cache the current EditorState for extreme debugging
+        state_history.push(editor_state.clone());
         if editor_state.quit {
             break;
         }
@@ -443,6 +461,9 @@ fn main() {
     println!("Original buffer: {}", editor_state.original_buffer);
     println!("Add buffer: {}", editor_state.add_buffer);
     println!("{}", editor_state.piece_table);
+
+    // save the history of EditorStates to a file
+    save_editor_states(state_history);
 
     disable_raw_mode().unwrap();
 }
