@@ -24,7 +24,7 @@ impl fmt::Display for Buffer {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PieceTable {
     which: Vec<Buffer>,
     start: Vec<usize>,
@@ -41,7 +41,7 @@ impl fmt::Display for PieceTable {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CursorState {
     desired_x: usize,
     x: usize,
@@ -263,6 +263,133 @@ fn insert_string(original: &String, insert: &String, pos: usize) -> String {
     original_vec.into_iter().collect()
 }
 
+#[derive(Debug, Clone)]
+pub struct EditorState {
+    piece_table: PieceTable,
+    original_buffer: String,
+    add_buffer: String,
+    running_buffer: String,
+    display_buffer: String,
+    cursor_state: CursorState,
+    line_offset: usize,
+    insert_index: usize,
+    quit: bool,
+}
+
+fn update_editor_state(mut editor_state: EditorState) -> EditorState {
+    let mut stdout = stdout();
+    enable_raw_mode().unwrap();
+    match read().unwrap() {
+        Event::Key(KeyEvent {
+            code: KeyCode::Char('h'),
+            modifiers: KeyModifiers::CONTROL,
+        }) => execute!(stdout, Clear(ClearType::All), Print("This is a minimalist text editor.")).unwrap(),
+        Event::Key(KeyEvent {
+            code: KeyCode::Char('k'),
+            modifiers: KeyModifiers::ALT,
+        }) => execute!(stdout, Clear(ClearType::All), Print("You typed alt-k")).unwrap(),
+        Event::Key(KeyEvent {
+            code: KeyCode::Char('q'),
+            modifiers: KeyModifiers::CONTROL,
+        }) => editor_state.quit = true,
+        Event::Key(KeyEvent {
+            code: KeyCode::Left,
+            modifiers: _,
+        }) => {
+            // first we have to commit the working buffer to the piece table
+            if editor_state.running_buffer.len() > 0 {
+                (editor_state.add_buffer, editor_state.piece_table) = insert_table(editor_state.add_buffer, editor_state.piece_table, &editor_state.running_buffer, editor_state.insert_index);
+                editor_state.running_buffer = "".to_string();
+            }
+            if editor_state.insert_index > 0 {
+                editor_state.insert_index -= 1;
+            }
+            // now we can actually update the cursor and related variables
+            if editor_state.cursor_state.x == 0 {
+                if editor_state.cursor_state.y > 0 {
+                    (editor_state.cursor_state.x, editor_state.cursor_state.y) = get_position_of_offset(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.insert_index);
+                    // don't forget to take pagination into consideration. Absolute length may not be the real height on screen
+                    editor_state.cursor_state.y -= editor_state.line_offset;
+                    editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
+                } else {
+                    // don't try to move beyond the start of the document
+                }
+            }else {
+                // moving the cursor on the current line is easy
+                editor_state.cursor_state.x -= 1;
+                editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
+            }
+        },
+        Event::Key(KeyEvent {
+            code: KeyCode::Right,
+            modifiers: _,
+        }) => {
+            // first we have to commit the working buffer to the piece table
+            if editor_state.running_buffer.len() > 0 {
+                (editor_state.add_buffer, editor_state.piece_table) = insert_table(editor_state.add_buffer, editor_state.piece_table, &editor_state.running_buffer, editor_state.insert_index);
+                // update the insert position to the *end* of the editor_state.running_buffer
+                if editor_state.insert_index < read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer).len() + editor_state.running_buffer.len() {
+                    editor_state.insert_index += editor_state.running_buffer.len();
+                }
+                editor_state.running_buffer = "".to_string();
+            }
+            // now we can actually update the cursor and related variables
+            if editor_state.cursor_state.x >= get_width_of_line(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.y + editor_state.line_offset) {
+                if editor_state.insert_index + 1 < read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer).len() {
+                    (editor_state.cursor_state.x, editor_state.cursor_state.y) = get_position_of_offset(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.insert_index);
+                    // don't forget to take pagination into consideration. Absolute length may not be the real height on screen
+                    editor_state.cursor_state.y -= editor_state.line_offset;
+                    editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
+                } else {
+                    // do nothing when you're at the end of the last line
+                }
+            } else {
+                // moving the cursor on the current line is easy
+                editor_state.cursor_state.x += 1;
+                editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
+            }
+        },
+        Event::Key(KeyEvent {
+            code: c,
+            modifiers: m
+        }) => {
+            // catch-all for spaces, newlines, and characters to add to the buffer
+            // keep track of where we started typing on the screen. You can't insert by the cursor position
+            // because the cursor will move as you type, but we're not committing each character to the
+            // piece table one at a time.
+            if editor_state.running_buffer.len() == 0 {
+                editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y + editor_state.line_offset);
+            }
+            match c {
+                KeyCode::Char(' ') => {
+                    editor_state.running_buffer.push(' ');
+                    (editor_state.add_buffer, editor_state.piece_table) = insert_table(editor_state.add_buffer, editor_state.piece_table, &editor_state.running_buffer, editor_state.insert_index);
+                    editor_state.running_buffer = "".to_string();
+                    editor_state.cursor_state.x += 1;
+                    editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
+                },
+                KeyCode::Enter => {
+                    editor_state.running_buffer.push('\n');
+                    (editor_state.add_buffer, editor_state.piece_table) = insert_table(editor_state.add_buffer, editor_state.piece_table, &editor_state.running_buffer, editor_state.insert_index);
+                    editor_state.running_buffer = "".to_string();
+                    editor_state.cursor_state.desired_x = 0;
+                    editor_state.cursor_state.x = 0;
+                    editor_state.cursor_state.y += 1;
+                },
+                KeyCode::Char(c) => {
+                    editor_state.running_buffer.push(c);
+                    editor_state.cursor_state.desired_x += 1;
+                    editor_state.cursor_state.x += 1;
+                },
+                _ => (),
+            }
+        },
+        _ => (),
+    }
+    disable_raw_mode().unwrap();
+    editor_state
+}
+
 fn main() {
     let mut piece_table: PieceTable = PieceTable{
         which: Vec::new(),
@@ -284,129 +411,38 @@ fn main() {
     enable_raw_mode().unwrap();
     let mut insert_index: usize = 0;
 
+    let mut editor_state = EditorState{
+        piece_table: piece_table,
+        original_buffer: original_buffer,
+        add_buffer: add_buffer,
+        running_buffer: running_buffer,
+        display_buffer: display_buffer,
+        cursor_state: cursor_state,
+        line_offset: line_offset,
+        insert_index: insert_index,
+        quit: false,
+    };
+
     loop {
         execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0)).unwrap();
         println!("{}", make_text_green(&"Welcome to Goncharov!".to_string()));
-        display_buffer = read_table(&piece_table, &original_buffer, &add_buffer);
-        //print!("display buffer before insert: {}", display_buffer);
-        display_buffer = insert_string(&display_buffer, &running_buffer, insert_index);
-        //println!("display buffer after  insert: {}", display_buffer);
-        //println!("cursor position: ({}, {})", cursor_state.x, cursor_state.y);
-        println!("{}", display_buffer);
-        execute!(stdout, cursor::MoveTo(cursor_state.x as u16, (cursor_state.y - line_offset + 1) as u16)).unwrap();
-        match read().unwrap() {
-            Event::Key(KeyEvent {
-                code: KeyCode::Char('h'),
-                modifiers: KeyModifiers::CONTROL,
-            }) => execute!(stdout, Clear(ClearType::All), Print("This is a minimalist text editor.")).unwrap(),
-            Event::Key(KeyEvent {
-                code: KeyCode::Char('k'),
-                modifiers: KeyModifiers::ALT,
-            }) => execute!(stdout, Clear(ClearType::All), Print("You typed alt-k")).unwrap(),
-            Event::Key(KeyEvent {
-                code: KeyCode::Char('q'),
-                modifiers: KeyModifiers::CONTROL,
-            }) => break,
-            Event::Key(KeyEvent {
-                code: KeyCode::Left,
-                modifiers: _,
-            }) => {
-                // first we have to commit the working buffer to the piece table
-                if running_buffer.len() > 0 {
-                    (add_buffer, piece_table) = insert_table(add_buffer, piece_table, &running_buffer, insert_index);
-                    running_buffer = "".to_string();
-                }
-                if insert_index > 0 {
-                    insert_index -= 1;
-                }
-                // now we can actually update the cursor and related variables
-                if cursor_state.x == 0 {
-                    if cursor_state.y > 0 {
-                        (cursor_state.x, cursor_state.y) = get_position_of_offset(&read_table(&piece_table, &original_buffer, &add_buffer), insert_index);
-                        // don't forget to take pagination into consideration. Absolute length may not be the real height on screen
-                        cursor_state.y -= line_offset;
-                        cursor_state.desired_x = cursor_state.x;
-                    } else {
-                        // don't try to move beyond the start of the document
-                    }
-                }else {
-                    // moving the cursor on the current line is easy
-                    cursor_state.x -= 1;
-                    cursor_state.desired_x = cursor_state.x;
-                }
-            },
-            Event::Key(KeyEvent {
-                code: KeyCode::Right,
-                modifiers: _,
-            }) => {
-                // first we have to commit the working buffer to the piece table
-                if running_buffer.len() > 0 {
-                    (add_buffer, piece_table) = insert_table(add_buffer, piece_table, &running_buffer, insert_index);
-                    // update the insert position to the *end* of the running_buffer
-                    if insert_index < read_table(&piece_table, &original_buffer, &add_buffer).len() + running_buffer.len() {
-                        insert_index += running_buffer.len();
-                    }
-                    running_buffer = "".to_string();
-                }
-                // now we can actually update the cursor and related variables
-                if cursor_state.x >= get_width_of_line(&read_table(&piece_table, &original_buffer, &add_buffer), cursor_state.y + line_offset) {
-                    if insert_index + 1 < read_table(&piece_table, &original_buffer, &add_buffer).len() {
-                        (cursor_state.x, cursor_state.y) = get_position_of_offset(&read_table(&piece_table, &original_buffer, &add_buffer), insert_index);
-                        // don't forget to take pagination into consideration. Absolute length may not be the real height on screen
-                        cursor_state.y -= line_offset;
-                        cursor_state.desired_x = cursor_state.x;
-                    } else {
-                        // do nothing when you're at the end of the last line
-                    }
-                } else {
-                    // moving the cursor on the current line is easy
-                    cursor_state.x += 1;
-                    cursor_state.desired_x = cursor_state.x;
-                }
-            },
-            Event::Key(KeyEvent {
-                code: c,
-                modifiers: m
-            }) => {
-                // catch-all for spaces, newlines, and characters to add to the buffer
-                // keep track of where we started typing on the screen. You can't insert by the cursor position
-                // because the cursor will move as you type, but we're not committing each character to the
-                // piece table one at a time.
-                if running_buffer.len() == 0 {
-                    insert_index = get_offset_of_position(&read_table(&piece_table, &original_buffer, &add_buffer), cursor_state.x, cursor_state.y + line_offset);
-                }
-                match c {
-                    KeyCode::Char(' ') => {
-                        running_buffer.push(' ');
-                        (add_buffer, piece_table) = insert_table(add_buffer, piece_table, &running_buffer, insert_index);
-                        running_buffer = "".to_string();
-                        cursor_state.x += 1;
-                        cursor_state.desired_x = cursor_state.x;
-                    },
-                    KeyCode::Enter => {
-                        running_buffer.push('\n');
-                        (add_buffer, piece_table) = insert_table(add_buffer, piece_table, &running_buffer, insert_index);
-                        running_buffer = "".to_string();
-                        cursor_state.desired_x = 0;
-                        cursor_state.x = 0;
-                        cursor_state.y += 1;
-                    },
-                    KeyCode::Char(c) => {
-                        running_buffer.push(c);
-                        cursor_state.desired_x += 1;
-                        cursor_state.x += 1;
-                    },
-                    _ => (),
-                }
-            },
-            _ => (),
+        editor_state.display_buffer = read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer);
+        //print!("display buffer before insert: {}", editor_state.display_buffer);
+        editor_state.display_buffer = insert_string(&editor_state.display_buffer, &editor_state.running_buffer, editor_state.insert_index);
+        //println!("display buffer after  insert: {}", editor_state.display_buffer);
+        //println!("cursor position: ({}, {})", editor_state.cursor_state.x, editor_state.cursor_state.y);
+        println!("{}", editor_state.display_buffer);
+        execute!(stdout, cursor::MoveTo(editor_state.cursor_state.x as u16, (editor_state.cursor_state.y - editor_state.line_offset + 1) as u16)).unwrap();
+        editor_state = update_editor_state(editor_state);
+        if editor_state.quit {
+            break;
         }
     }
     print!("\n\n");
-    println!("{}", read_table(&piece_table, &original_buffer, &add_buffer));
-    println!("Original buffer: {}", original_buffer);
-    println!("Add buffer: {}", add_buffer);
-    println!("{}", piece_table);
+    println!("{}", read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer));
+    println!("Original buffer: {}", editor_state.original_buffer);
+    println!("Add buffer: {}", editor_state.add_buffer);
+    println!("{}", editor_state.piece_table);
 
     disable_raw_mode().unwrap();
 }
