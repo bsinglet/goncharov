@@ -302,6 +302,7 @@ fn update_editor_state(mut editor_state: EditorState) -> EditorState {
             // first we have to commit the working buffer to the piece table
             if editor_state.running_buffer.len() > 0 {
                 (editor_state.add_buffer, editor_state.piece_table) = insert_table(editor_state.add_buffer, editor_state.piece_table, &editor_state.running_buffer, editor_state.insert_index);
+                // update the insert position to the *end* of the editor_state.running_buffer
                 editor_state.insert_index += editor_state.running_buffer.len();
                 editor_state.running_buffer = "".to_string();
             }
@@ -353,6 +354,46 @@ fn update_editor_state(mut editor_state: EditorState) -> EditorState {
                 editor_state.insert_index += 1;
                 editor_state.cursor_state.x += 1;
                 editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
+            }
+        },
+        Event::Key(KeyEvent {
+            code: KeyCode::Up,
+            modifiers: _,
+        }) => {
+            // first we have to commit the working buffer to the piece table
+            if editor_state.running_buffer.len() > 0 {
+                (editor_state.add_buffer, editor_state.piece_table) = insert_table(editor_state.add_buffer, editor_state.piece_table, &editor_state.running_buffer, editor_state.insert_index);
+                // update the insert position to the *end* of the editor_state.running_buffer
+                if editor_state.insert_index < read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer).len() + editor_state.running_buffer.len() {
+                    editor_state.insert_index += editor_state.running_buffer.len();
+                }
+                editor_state.running_buffer = "".to_string();
+            }
+            // now we can actually update the cursor and related variables
+            if editor_state.cursor_state.y + editor_state.line_offset > 0 {
+                // clip to end of line if we're at the end of a line
+                if editor_state.cursor_state.x == get_width_of_line(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.y) {
+                    editor_state.cursor_state.clip_right = true;
+                }
+                // figure out where to jump in the line above
+                let mut length_of_above_line = get_width_of_line(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.y + editor_state.line_offset - 1);
+                // if at end of a line, go to end of above line
+                if editor_state.cursor_state.clip_right || editor_state.cursor_state.x >= length_of_above_line {
+                    // TODO: factor in line offset and pagination here
+                    editor_state.cursor_state.y -= 1;
+                    editor_state.cursor_state.x = length_of_above_line;
+                    editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
+                    editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y);
+                // if in middle of a line, go to same position in above line
+                } else {
+                    // TODO: factor in line offset and pagination here
+                    editor_state.cursor_state.y -= 1;
+                    // editor_state.cursor_state.x stays the same because the above line is longer than this line
+                    editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
+                    editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y);
+                }
+            } else {
+                // do nothing, we can't go any further up in the document
             }
         },
         Event::Key(KeyEvent {
