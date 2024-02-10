@@ -338,8 +338,9 @@ fn update_editor_state(mut editor_state: EditorState) -> EditorState {
                 editor_state.running_buffer = "".to_string();
             }
             // now we can actually update the cursor and related variables
-            if editor_state.cursor_state.x >= get_width_of_line(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.y + editor_state.line_offset) {
+            if editor_state.cursor_state.x == get_width_of_line(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.y + editor_state.line_offset) {
                 if editor_state.insert_index + 1 < read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer).len() {
+                    editor_state.insert_index += 1;
                     (editor_state.cursor_state.x, editor_state.cursor_state.y) = get_position_of_offset(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.insert_index);
                     // don't forget to take pagination into consideration. Absolute length may not be the real height on screen
                     editor_state.cursor_state.y -= editor_state.line_offset;
@@ -349,6 +350,7 @@ fn update_editor_state(mut editor_state: EditorState) -> EditorState {
                 }
             } else {
                 // moving the cursor on the current line is easy
+                editor_state.insert_index += 1;
                 editor_state.cursor_state.x += 1;
                 editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
             }
