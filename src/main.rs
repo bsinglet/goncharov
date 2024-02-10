@@ -7,7 +7,7 @@ use std::io::{self, stdout, Write};
 //use std::io::prelude::*;
 use std::io::BufWriter;
 use crossterm::cursor;
-use crossterm::event::{self, read, Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{read, Event, KeyCode, KeyEvent, KeyModifiers};
 use crossterm::style::Print;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType};
 
@@ -61,7 +61,7 @@ impl fmt::Display for CursorState {
     }
 }
 
-fn test_text() {
+fn _test_text() {
     let mut piece_table: PieceTable = PieceTable{
         which: Vec::new(),
         start: Vec::new(),
@@ -88,7 +88,7 @@ fn test_text() {
     println!("{}", piece_table);
 }
 
-fn delete_text(mut piece_table: PieceTable, delete_start: usize, delete_end: usize) -> PieceTable {
+fn _delete_text(mut piece_table: PieceTable, delete_start: usize, delete_end: usize) -> PieceTable {
     
 
     piece_table
@@ -153,7 +153,7 @@ fn read_table(piece_table: &PieceTable, original_buffer: &String, add_buffer: &S
     message
 }
 
-fn get_table_length(piece_table: &PieceTable) -> usize {
+fn _get_table_length(piece_table: &PieceTable) -> usize {
     let mut table_length: usize = 0;
     for each_index in 0..piece_table.which.len() {
         table_length += piece_table.end[each_index] - piece_table.start[each_index];
@@ -161,27 +161,27 @@ fn get_table_length(piece_table: &PieceTable) -> usize {
     table_length
 }
 
-fn cursor_left(move_by: i32) {
+fn _cursor_left(move_by: i32) {
     print!("\x1B[{}D", move_by);
     io::stdout().flush().unwrap();
 }
 
-fn cursor_right(move_by: i32) {
+fn _cursor_right(move_by: i32) {
     print!("\x1B[{}C", move_by);
     io::stdout().flush().unwrap();
 }
 
-fn cursor_up(move_by: i32) {
+fn _cursor_up(move_by: i32) {
     print!("\x1B[{}A", move_by);
     io::stdout().flush().unwrap();
 }
 
-fn cursor_down(move_by: i32) {
+fn _cursor_down(move_by: i32) {
     print!("\x1B[{}B", move_by);
     io::stdout().flush().unwrap();
 }
 
-fn make_text_red(text: &String) -> String {
+fn _make_text_red(text: &String) -> String {
     format!("\x1b[31m{}\x1b[0m", &text)
 }
 
@@ -189,11 +189,11 @@ fn make_text_green(text: &String) -> String {
     format!("\x1b[32m{}\x1b[0m", &text)
 }
 
-fn make_text_blue(text: &String) -> String {
+fn _make_text_blue(text: &String) -> String {
     format!("\x1b[34m{}\x1b[0m", &text)
 }
 
-fn clear_screen() {
+fn _clear_screen() {
     print!("\x1B[2J\x1B[1;1H");
     io::stdout().flush().unwrap();
 }
@@ -239,8 +239,6 @@ fn get_offset_of_position(message: &String, pos_x: usize, pos_y: usize) -> usize
 fn get_width_of_line(message: &String, pos_y: usize) -> usize {
     let mut x: usize = 0;
     let mut y: usize = 0;
-    let mut last_line_length: usize = 0;
-    let mut current_offset: usize = 0;
     for each_character in message.as_bytes() {
         if y == pos_y + 1 {
             break;
@@ -254,7 +252,6 @@ fn get_width_of_line(message: &String, pos_y: usize) -> usize {
         }else {
             x += 1;
         }
-        current_offset += 1;
     }
     x
 }
@@ -386,7 +383,7 @@ fn update_editor_state(mut editor_state: EditorState) -> EditorState {
                     editor_state.cursor_state.clip_right = true;
                 }
                 // figure out where to jump in the line above
-                let mut length_of_above_line = get_width_of_line(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.y + editor_state.line_offset - 1);
+                let length_of_above_line = get_width_of_line(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.y + editor_state.line_offset - 1);
                 // if at end of a line, go to end of above line
                 if editor_state.cursor_state.clip_right || editor_state.cursor_state.x >= length_of_above_line {
                     // TODO: factor in line offset and pagination here
@@ -448,7 +445,7 @@ fn update_editor_state(mut editor_state: EditorState) -> EditorState {
         },
         Event::Key(KeyEvent {
             code: c,
-            modifiers: m
+            modifiers: _m
         }) => {
             // catch-all for spaces, newlines, and characters to add to the buffer
             // keep track of where we started typing on the screen. You can't insert by the cursor position
@@ -498,25 +495,25 @@ fn save_editor_states(state_history: Vec<EditorState>) {
 }
 
 fn main() {
-    let mut piece_table: PieceTable = PieceTable{
+    let piece_table: PieceTable = PieceTable{
         which: Vec::new(),
         start: Vec::new(),
         end: Vec::new(),
     };
-    let mut original_buffer: String = "".to_string();
-    let mut add_buffer: String = "".to_string();
-    let mut running_buffer: String = "".to_string();
-    let mut display_buffer: String = "".to_string();
-    let mut cursor_state: CursorState = CursorState{
+    let original_buffer: String = "".to_string();
+    let add_buffer: String = "".to_string();
+    let running_buffer: String = "".to_string();
+    let display_buffer: String = "".to_string();
+    let cursor_state: CursorState = CursorState{
         desired_x: 0,
         x: 0,
         y: 0,
         clip_right: false,
     };
-    let mut line_offset: usize = 0;
+    let line_offset: usize = 0;
     let mut stdout = stdout();
     enable_raw_mode().unwrap();
-    let mut insert_index: usize = 0;
+    let insert_index: usize = 0;
 
     let mut editor_state = EditorState{
         piece_table: piece_table,
