@@ -330,6 +330,7 @@ fn update_editor_state(mut editor_state: EditorState) -> EditorState {
                 // moving the cursor on the current line is easy
                 editor_state.cursor_state.x -= 1;
                 editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
+                editor_state.cursor_state.clip_right = false;
             }
         },
         Event::Key(KeyEvent {
@@ -361,6 +362,7 @@ fn update_editor_state(mut editor_state: EditorState) -> EditorState {
                 editor_state.insert_index += 1;
                 editor_state.cursor_state.x += 1;
                 editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
+                editor_state.cursor_state.clip_right = false;
             }
         },
         Event::Key(KeyEvent {
@@ -397,6 +399,7 @@ fn update_editor_state(mut editor_state: EditorState) -> EditorState {
                     editor_state.cursor_state.y -= 1;
                     // editor_state.cursor_state.x stays the same because the above line is longer than this line
                     editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
+                    editor_state.cursor_state.clip_right = false;
                     editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y);
                 }
             } else {
@@ -437,6 +440,7 @@ fn update_editor_state(mut editor_state: EditorState) -> EditorState {
                     editor_state.cursor_state.y += 1;
                     // editor_state.cursor_state.x stays the same because the above line is longer than this line
                     editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
+                    editor_state.cursor_state.clip_right = false;
                     editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y);
                 }
             } else {
