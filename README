@@ -17,9 +17,9 @@ Goncharov is a Rust-based, cross-platform, CLI text editor. It is still in pre-a
 5. Left cursor movement
 6. Right cursor movement
 7. Up cursor movement
+8. Down cursor movement
 
 ### Upcoming features
-8. Down cursor movement
 9. Pagination
 10. Loading files
 11. Saving files
