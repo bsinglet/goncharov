@@ -537,7 +537,11 @@ fn render_editor(editor_state: &EditorState) {
     let end_of_page: usize = get_offset_of_position(&editor_state.display_buffer, 0, editor_state.line_offset + editor_state.printable_height, editor_state.printable_width, editor_state.line_wrap);
     // read the display_buffer from start_of_page to end_of_page
     let mut paginated_display = String::from_utf8(editor_state.display_buffer.as_bytes().split_at(start_of_page).1.to_vec()).unwrap();
+    // cut off the display_buffer at the end of the page
     paginated_display = String::from_utf8(paginated_display.as_bytes().split_at(end_of_page).0.to_vec()).unwrap();
+    // TODO - perform any line-wrapping now
+
+    // display the paginated, line-wrapped screen
     println!("{}", paginated_display);
 }
 

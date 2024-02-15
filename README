@@ -8,6 +8,12 @@ Goncharov is a Rust-based, cross-platform, CLI text editor. It is still in pre-a
 2. cd into the new directory
 3. Execute `cargo run`
 
+## Open Tasks
+- Finish render_editor logic for line-wrapping
+- Add code to increment/decrement line_offset in the EditorState updater
+- Figure out the right interactions between cursor_state.y and line_offset, then make all their appearances in the code consistent
+- Need to clean up update_editor_state, make it more consistent in using editor_state.display_buffer or similar if possible
+
 ## Roadmap
 ### Already Implemented
 1. Implementing the piece table data structure to allow for efficiently tracking insertions and deletions on large documents, with infinite undo and redo potential at zero cost
