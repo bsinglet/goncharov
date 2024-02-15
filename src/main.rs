@@ -124,7 +124,7 @@ fn insert_table(mut add_buffer: String, mut piece_table: PieceTable, insertion_t
             piece_table.which.splice(entry_num..entry_num, vec![Buffer::Add]);
             piece_table.start.splice(entry_num..entry_num, vec![add_buffer.len()]);
             piece_table.end.splice(entry_num..entry_num, vec![add_buffer.len() + insertion_text.len()]);
-        }else {
+        }  else {
             // split the text in entry_num
             let old_start: usize = piece_table.start[entry_num];
             let old_end: usize = piece_table.end[entry_num];
@@ -198,26 +198,39 @@ fn _clear_screen() {
     io::stdout().flush().unwrap();
 }
 
-fn get_position_of_offset(message: &String, offset: usize) -> (usize, usize) {
+fn get_position_of_offset(message: &String, offset: usize, line_width: usize, line_wrap: bool) -> (usize, usize) {
     let mut x: usize = 0;
     let mut y: usize = 0;
     let mut current_offset: usize = 0;
     for each_character in message.as_bytes() {
+        // break on edge of line if line_wrap
+        if line_wrap && x == line_width {
+            y += 1;
+            x = 0;
+        }
         if current_offset == offset {
             break;
         }
+        // newline is always a break, even if we just broke because of the end of a line.
         if each_character == &('\n' as u8) {
             y += 1;
             x = 0;
-        }else {
+        } else {
             x += 1;
         }
         current_offset += 1;
     }
+    // go to the next line if you move the cursor to the position after the last character
+    if line_wrap && offset == message.len() {
+        if x == line_width {
+            x = 0;
+            y += 1;
+        }
+    }
     (x, y)
 }
 
-fn get_offset_of_position(message: &String, pos_x: usize, pos_y: usize) -> usize {
+fn get_offset_of_position(message: &String, pos_x: usize, pos_y: usize, line_width: usize, line_wrap: bool) -> usize {
     let mut x: usize = 0;
     let mut y: usize = 0;
     let mut current_offset: usize = 0;
@@ -225,10 +238,16 @@ fn get_offset_of_position(message: &String, pos_x: usize, pos_y: usize) -> usize
         if y == pos_y && x == pos_x {
             break;
         }
+        // break on edge of line if line_wrap
+        if line_wrap && x == line_width {
+            y += 1;
+            x = 0;
+        }
+        // newline is always a break, even if we just broke because of the end of a line.
         if each_character == &('\n' as u8) {
             y += 1;
             x = 0;
-        }else {
+        }  else {
             x += 1;
         }
         current_offset += 1;
@@ -249,7 +268,7 @@ fn get_width_of_line(message: &String, pos_y: usize) -> usize {
             }
             y += 1;
             x = 0;
-        }else {
+        } else {
             x += 1;
         }
     }
@@ -283,6 +302,9 @@ pub struct EditorState {
     cursor_state: CursorState,
     line_offset: usize,
     insert_index: usize,
+    printable_height: usize,
+    printable_width: usize,
+    line_wrap: bool,
     quit: bool,
 }
 
@@ -319,14 +341,14 @@ fn update_editor_state(mut editor_state: EditorState) -> EditorState {
             // now we can actually update the cursor and related variables
             if editor_state.cursor_state.x == 0 {
                 if editor_state.cursor_state.y > 0 {
-                    (editor_state.cursor_state.x, editor_state.cursor_state.y) = get_position_of_offset(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.insert_index);
+                    (editor_state.cursor_state.x, editor_state.cursor_state.y) = get_position_of_offset(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.insert_index, editor_state.printable_width, editor_state.line_wrap);
                     // don't forget to take pagination into consideration. Absolute length may not be the real height on screen
                     editor_state.cursor_state.y -= editor_state.line_offset;
                     editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
                 } else {
                     // don't try to move beyond the start of the document
                 }
-            }else {
+            }  else {
                 // moving the cursor on the current line is easy
                 editor_state.cursor_state.x -= 1;
                 editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
@@ -350,7 +372,7 @@ fn update_editor_state(mut editor_state: EditorState) -> EditorState {
             if editor_state.cursor_state.x == get_width_of_line(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.y + editor_state.line_offset) {
                 if editor_state.insert_index + 1 < read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer).len() {
                     editor_state.insert_index += 1;
-                    (editor_state.cursor_state.x, editor_state.cursor_state.y) = get_position_of_offset(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.insert_index);
+                    (editor_state.cursor_state.x, editor_state.cursor_state.y) = get_position_of_offset(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.insert_index, editor_state.printable_width, editor_state.line_wrap);
                     // don't forget to take pagination into consideration. Absolute length may not be the real height on screen
                     editor_state.cursor_state.y -= editor_state.line_offset;
                     editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
@@ -392,7 +414,7 @@ fn update_editor_state(mut editor_state: EditorState) -> EditorState {
                     editor_state.cursor_state.y -= 1;
                     editor_state.cursor_state.x = length_of_above_line;
                     editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
-                    editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y);
+                    editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y, editor_state.printable_width, editor_state.line_wrap);
                 // if in middle of a line, go to same position in above line
                 } else {
                     // TODO: factor in line offset and pagination here
@@ -400,7 +422,7 @@ fn update_editor_state(mut editor_state: EditorState) -> EditorState {
                     // editor_state.cursor_state.x stays the same because the above line is longer than this line
                     editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
                     editor_state.cursor_state.clip_right = false;
-                    editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y);
+                    editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y, editor_state.printable_width, editor_state.line_wrap);
                 }
             } else {
                 // do nothing, we can't go any further up in the document
@@ -433,7 +455,7 @@ fn update_editor_state(mut editor_state: EditorState) -> EditorState {
                     editor_state.cursor_state.y += 1;
                     editor_state.cursor_state.x = length_of_below_line;
                     editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
-                    editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y);
+                    editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y, editor_state.printable_width, editor_state.line_wrap);
                 // if in middle of a line, go to same position in above line
                 } else {
                     // TODO: factor in line offset and pagination here
@@ -441,7 +463,7 @@ fn update_editor_state(mut editor_state: EditorState) -> EditorState {
                     // editor_state.cursor_state.x stays the same because the above line is longer than this line
                     editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
                     editor_state.cursor_state.clip_right = false;
-                    editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y);
+                    editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y, editor_state.printable_width, editor_state.line_wrap);
                 }
             } else {
                 // do nothing, we can't go any further up in the document
@@ -456,7 +478,7 @@ fn update_editor_state(mut editor_state: EditorState) -> EditorState {
             // because the cursor will move as you type, but we're not committing each character to the
             // piece table one at a time.
             if editor_state.running_buffer.len() == 0 {
-                editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y + editor_state.line_offset);
+                editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y + editor_state.line_offset, editor_state.printable_width, editor_state.line_wrap);
             }
             match c {
                 KeyCode::Char(' ') => {
@@ -498,6 +520,27 @@ fn save_editor_states(state_history: Vec<EditorState>) {
     }
 }
 
+fn render_editor(editor_state: &EditorState) {
+    /*
+     * The function that accepts the current EditorState and displays it on the screen.
+     * This assumes that editor_state.display_buffer is the full contents of the document, 
+     * including the text being inserted which hasn't been committted to the piece table yet.
+     * Based on that, it performs pagination and line-wrapping (if applicable), then renders 
+     * the result.
+     */
+    if editor_state.line_offset > get_number_of_lines(&editor_state.display_buffer) {
+        return;
+    }
+    // use editor_state.line_offset to determine how many lines into the document the 
+    // first displayed line should be 
+    let start_of_page: usize = get_offset_of_position(&editor_state.display_buffer, 0, editor_state.line_offset, editor_state.printable_width, editor_state.line_wrap);
+    let end_of_page: usize = get_offset_of_position(&editor_state.display_buffer, 0, editor_state.line_offset + editor_state.printable_height, editor_state.printable_width, editor_state.line_wrap);
+    // read the display_buffer from start_of_page to end_of_page
+    let mut paginated_display = String::from_utf8(editor_state.display_buffer.as_bytes().split_at(start_of_page).1.to_vec()).unwrap();
+    paginated_display = String::from_utf8(paginated_display.as_bytes().split_at(end_of_page).0.to_vec()).unwrap();
+    println!("{}", paginated_display);
+}
+
 fn main() {
     let piece_table: PieceTable = PieceTable{
         which: Vec::new(),
@@ -528,6 +571,9 @@ fn main() {
         cursor_state: cursor_state,
         line_offset: line_offset,
         insert_index: insert_index,
+        line_wrap: true,
+        printable_height: 24,
+        printable_width: 80,
         quit: false,
     };
 
@@ -541,7 +587,7 @@ fn main() {
         editor_state.display_buffer = insert_string(&editor_state.display_buffer, &editor_state.running_buffer, editor_state.insert_index);
         //println!("display buffer after  insert: {}", editor_state.display_buffer);
         //println!("cursor position: ({}, {})", editor_state.cursor_state.x, editor_state.cursor_state.y);
-        println!("{}", editor_state.display_buffer);
+        render_editor(&editor_state);
         execute!(stdout, cursor::MoveTo(editor_state.cursor_state.x as u16, (editor_state.cursor_state.y - editor_state.line_offset + 1) as u16)).unwrap();
         editor_state = update_editor_state(editor_state);
         // cache the current EditorState for extreme debugging
@@ -569,72 +615,108 @@ mod tests {
     #[test]
     fn test_get_position_of_offset_01() {
         let message = "a\nb\n\naaa\naaa".to_string();
-        assert_eq!(get_position_of_offset(&message, 0), (0, 0));
+        assert_eq!(get_position_of_offset(&message, 0, 80, false), (0, 0));
     }
 
     #[test]
     fn test_get_position_of_offset_02() {
         let message = "a\nb\n\naaa\naaa".to_string();
-        assert_eq!(get_position_of_offset(&message, 1), (1, 0));
+        assert_eq!(get_position_of_offset(&message, 1, 80, false), (1, 0));
     }
 
     #[test]
     fn test_get_position_of_offset_03() {
         let message = "a\nb\n\naaa\naaa".to_string();
-        assert_eq!(get_position_of_offset(&message, 2), (0, 1));
+        assert_eq!(get_position_of_offset(&message, 2, 80, false), (0, 1));
     }
 
     #[test]
     fn test_get_position_of_offset_04() {
         let message = "a\nb\n\naaa\naaa".to_string();
-        assert_eq!(get_position_of_offset(&message, 5), (0, 3));
+        assert_eq!(get_position_of_offset(&message, 5, 80, false), (0, 3));
     }
 
     #[test]
     fn test_get_position_of_offset_05() {
         let message = "a\nb\n\naaa\naaa".to_string();
-        assert_eq!(get_position_of_offset(&message, 8), (3, 3));
+        assert_eq!(get_position_of_offset(&message, 8, 80, false), (3, 3));
     }
 
     #[test]
     fn test_get_position_of_offset_06() {
         let message = "a\nb\n\naaa\naaa".to_string();
-        assert_eq!(get_position_of_offset(&message, 9), (0, 4));
+        assert_eq!(get_position_of_offset(&message, 9, 80, false), (0, 4));
+    }
+
+    #[test]
+    fn test_get_position_of_offset_line_wrap_01() {
+        // a single line that is 79 characters long shouldn't wrap
+        let message = "0123456789012345678901234567890123456789012345678901234567890123456789012345678".to_string();
+        assert_eq!(get_position_of_offset(&message, 79, 80, true), (79, 0));
+    }
+
+    #[test]
+    fn test_get_position_of_offset_line_wrap_02() {
+        // a single line that is 80 characters long won't wrap any letters, 
+        // but the if you move the cursor to the end, it will go to the start of the next line.
+        let message = "01234567890123456789012345678901234567890123456789012345678901234567890123456789".to_string();
+        assert_eq!(get_position_of_offset(&message, 80, 80, true), (0, 1));
+    }
+
+    #[test]
+    fn test_get_position_of_offset_line_wrap_03() {
+        // a single line that is 81 characters should wrap
+        let message = "012345678901234567890123456789012345678901234567890123456789012345678901234567890".to_string();
+        assert_eq!(get_position_of_offset(&message, 81, 80, true), (1, 1));
     }
 
     #[test]
     fn test_get_offset_of_position_01() {
         let message = "a\nb\n\naaa\naaa".to_string();
-        assert_eq!(get_offset_of_position(&message, 0, 0), 0);
+        assert_eq!(get_offset_of_position(&message, 0, 0, 80, false), 0);
     }
 
     #[test]
     fn test_get_offset_of_position_02() {
         let message = "a\nb\n\naaa\naaa".to_string();
-        assert_eq!(get_offset_of_position(&message, 1, 0), 1);
+        assert_eq!(get_offset_of_position(&message, 1, 0, 80, false), 1);
     }
 
     #[test]
     fn test_get_offset_of_position_03() {
         let message = "a\nb\n\naaa\naaa".to_string();
-        assert_eq!(get_offset_of_position(&message, 0, 1), 2);
+        assert_eq!(get_offset_of_position(&message, 0, 1, 80, false), 2);
     }
 
     #[test]
     fn test_get_offset_of_position_04() {
         let message = "a\nb\n\naaa\naaa".to_string();
-        assert_eq!(get_offset_of_position(&message, 0, 3), 5);
+        assert_eq!(get_offset_of_position(&message, 0, 3, 80, false), 5);
     }
 
     #[test]
     fn test_get_offset_of_position_05() {
         let message = "a\nb\n\naaa\naaa".to_string();
-        assert_eq!(get_offset_of_position(&message, 3, 3), 8);
+        assert_eq!(get_offset_of_position(&message, 3, 3, 80, false), 8);
     }
 
     #[test]
     fn test_get_offset_of_position_06() {
         let message = "a\nb\n\naaa\naaa".to_string();
-        assert_eq!(get_offset_of_position(&message, 0, 4), 9);
+        assert_eq!(get_offset_of_position(&message, 0, 4, 80, false), 9);
+    }
+
+    #[test]
+    fn test_get_offset_of_line_wrap_position_01() {
+        // a single line that is 81 characters should wrap
+        let message = "012345678901234567890123456789012345678901234567890123456789012345678901234567890".to_string();
+        assert_eq!(get_offset_of_position(&message, 1, 1, 80, true), 80);
+    }
+
+    #[test]
+    fn test_get_offset_of_line_wrap_position_02() {
+        // a single line that is 81 characters should wrap
+        let message = "012345678901234567890123456789012345678901234567890123456789012345678901234567890".to_string();
+        assert_eq!(get_offset_of_position(&message, 0, 79, 80, true), 79);
     }
 }
