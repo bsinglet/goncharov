@@ -520,6 +520,43 @@ fn save_editor_states(state_history: Vec<EditorState>) {
     }
 }
 
+fn split_lines_wrapped(input_text: String, screen_height: usize, line_width: usize, line_wrap: bool) -> String {
+    /*
+     * This function takes a string represents the screen to display. It then 
+     * returns a string that can be printed to show the whole, line-wrapped screen.
+     * This involves splitting the screen by the newlines already built into it,
+     * then splitting each of those into multiple lines, if needed, 
+     * due to line wrapping.
+     */
+    let mut lines: Vec<String> = Vec::new(); 
+    let mut line_iter = input_text.as_bytes().split(|c| c == &('\n' as u8));
+    loop {
+        match line_iter.next() {
+            Some(v) => {
+                // blank lines are special cases, put an empty string in the vector so we don't lose them
+                if v.len() == 0 {
+                    lines.push("".to_string());
+                }
+                // no line wrapping, don't do anything fancy
+                if !line_wrap {
+                    lines.push(std::str::from_utf8(v).unwrap().to_string());
+                }else {
+                    // line wrapping, split each line into chunks
+                    for each_line in v.chunks(line_width) {
+                        lines.push(std::str::from_utf8(each_line).unwrap().to_string())
+                    }
+                }
+            },
+            _ => break,
+        }
+    }
+    // combine all the lines into the new line-wrapped version
+    if lines.len() > screen_height {
+        lines = lines.split_at(screen_height).0.to_vec();
+    }
+    lines.join("\n")
+}
+
 fn render_editor(editor_state: &EditorState) {
     /*
      * The function that accepts the current EditorState and displays it on the screen.
@@ -536,11 +573,13 @@ fn render_editor(editor_state: &EditorState) {
     let start_of_page: usize = get_offset_of_position(&editor_state.display_buffer, 0, editor_state.line_offset, editor_state.printable_width, editor_state.line_wrap);
     let end_of_page: usize = get_offset_of_position(&editor_state.display_buffer, 0, editor_state.line_offset + editor_state.printable_height, editor_state.printable_width, editor_state.line_wrap);
     // read the display_buffer from start_of_page to end_of_page
+    // TODO - make sure this isn't off by one
     let mut paginated_display = String::from_utf8(editor_state.display_buffer.as_bytes().split_at(start_of_page).1.to_vec()).unwrap();
     // cut off the display_buffer at the end of the page
+    // TODO - make sure this isn't off by one
     paginated_display = String::from_utf8(paginated_display.as_bytes().split_at(end_of_page).0.to_vec()).unwrap();
     // TODO - perform any line-wrapping now
-
+    paginated_display = split_lines_wrapped(paginated_display, editor_state.printable_height, editor_state.printable_width, editor_state.line_wrap);
     // display the paginated, line-wrapped screen
     println!("{}", paginated_display);
 }
@@ -615,6 +654,32 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_split_lines_wrapped_01() {
+        // 81 characters long
+        let input_text: String = "012345678901234567890123456789012345678901234567890123456789012345678901234567890".to_string();
+        // should only wrap one character
+        let output_text: String = "01234567890123456789012345678901234567890123456789012345678901234567890123456789\n0".to_string();
+        assert_eq!(split_lines_wrapped(input_text, 24, 80, true), output_text);
+    }
+
+    #[test]
+    fn test_split_lines_wrapped_02() {
+        // line is 161 characters long
+        let input_text: String = "01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890".to_string();
+        // should wrap twice
+        let output_text: String = "01234567890123456789012345678901234567890123456789012345678901234567890123456789\n01234567890123456789012345678901234567890123456789012345678901234567890123456789\n0".to_string();
+        assert_eq!(split_lines_wrapped(input_text, 24, 80, true), output_text);
+    }
+
+    #[test]
+    fn test_split_lines_wrapped_03() {
+        // longer, more complicated input with blank lines, short lines, etc
+        let input_text: String = "01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890\naaa\n\n\n012345678901234567890123456789012345678901234567890123456789012345678901234567890\na\na\na".to_string();
+        let output_text: String = "01234567890123456789012345678901234567890123456789012345678901234567890123456789\n01234567890123456789012345678901234567890123456789012345678901234567890123456789\n0\naaa\n\n\n01234567890123456789012345678901234567890123456789012345678901234567890123456789\n0\na\na\na".to_string();
+        assert_eq!(split_lines_wrapped(input_text, 24, 80, true), output_text);
+    }
 
     #[test]
     fn test_get_position_of_offset_01() {
