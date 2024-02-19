@@ -308,6 +308,182 @@ pub struct EditorState {
     quit: bool,
 }
 
+fn move_cursor_left(mut editor_state: EditorState) -> EditorState {
+    // first we have to commit the working buffer to the piece table
+    if editor_state.running_buffer.len() > 0 {
+        (editor_state.add_buffer, editor_state.piece_table) = insert_table(editor_state.add_buffer, editor_state.piece_table, &editor_state.running_buffer, editor_state.insert_index);
+        // update the insert position to the *end* of the editor_state.running_buffer
+        editor_state.insert_index += editor_state.running_buffer.len();
+        editor_state.running_buffer = "".to_string();
+    }
+    if editor_state.insert_index > 0 {
+        editor_state.insert_index -= 1;
+    }
+    // now we can actually update the cursor and related variables
+    if editor_state.cursor_state.x == 0 {
+        if editor_state.cursor_state.y > 0 {
+            (editor_state.cursor_state.x, editor_state.cursor_state.y) = get_position_of_offset(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.insert_index, editor_state.printable_width, editor_state.line_wrap);
+            // don't forget to take pagination into consideration. Absolute length may not be the real height on screen
+            editor_state.cursor_state.y -= editor_state.line_offset;
+            editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
+        } else {
+            // don't try to move beyond the start of the document
+        }
+    }  else {
+        // moving the cursor on the current line is easy
+        editor_state.cursor_state.x -= 1;
+        editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
+        editor_state.cursor_state.clip_right = false;
+    }
+    editor_state
+}
+
+fn move_cursor_right(mut editor_state: EditorState) -> EditorState {
+    // first we have to commit the working buffer to the piece table
+    if editor_state.running_buffer.len() > 0 {
+        (editor_state.add_buffer, editor_state.piece_table) = insert_table(editor_state.add_buffer, editor_state.piece_table, &editor_state.running_buffer, editor_state.insert_index);
+        // update the insert position to the *end* of the editor_state.running_buffer
+        if editor_state.insert_index < read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer).len() + editor_state.running_buffer.len() {
+            editor_state.insert_index += editor_state.running_buffer.len();
+        }
+        editor_state.running_buffer = "".to_string();
+    }
+    // now we can actually update the cursor and related variables
+    if editor_state.cursor_state.x == get_width_of_line(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.y + editor_state.line_offset) {
+        if editor_state.insert_index + 1 < read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer).len() {
+            editor_state.insert_index += 1;
+            (editor_state.cursor_state.x, editor_state.cursor_state.y) = get_position_of_offset(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.insert_index, editor_state.printable_width, editor_state.line_wrap);
+            // don't forget to take pagination into consideration. Absolute length may not be the real height on screen
+            editor_state.cursor_state.y -= editor_state.line_offset;
+            editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
+        } else {
+            // do nothing when you're at the end of the last line
+        }
+    } else {
+        // moving the cursor on the current line is easy
+        editor_state.insert_index += 1;
+        editor_state.cursor_state.x += 1;
+        editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
+        editor_state.cursor_state.clip_right = false;
+    }
+    editor_state
+}
+
+fn move_cursor_down(mut editor_state: EditorState) -> EditorState {
+    // first we have to commit the working buffer to the piece table
+    if editor_state.running_buffer.len() > 0 {
+        (editor_state.add_buffer, editor_state.piece_table) = insert_table(editor_state.add_buffer, editor_state.piece_table, &editor_state.running_buffer, editor_state.insert_index);
+        // update the insert position to the *end* of the editor_state.running_buffer
+        if editor_state.insert_index < read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer).len() + editor_state.running_buffer.len() {
+            editor_state.insert_index += editor_state.running_buffer.len();
+        }
+        editor_state.running_buffer = "".to_string();
+    }
+    // now we can actually update the cursor and related variables
+    if editor_state.cursor_state.y + editor_state.line_offset < get_number_of_lines(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer)) {
+        // clip to end of line if we're at the end of a line
+        if editor_state.cursor_state.x == get_width_of_line(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.y) {
+            editor_state.cursor_state.clip_right = true;
+        }
+        // figure out where to jump in the line below
+        let length_of_below_line = get_width_of_line(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.y + editor_state.line_offset + 1);
+        // if at end of a line, go to end of below line
+        if editor_state.cursor_state.clip_right || editor_state.cursor_state.x >= length_of_below_line {
+            // TODO: factor in line offset and pagination here
+            editor_state.cursor_state.y += 1;
+            editor_state.cursor_state.x = length_of_below_line;
+            editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
+            editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y, editor_state.printable_width, editor_state.line_wrap);
+        // if in middle of a line, go to same position in above line
+        } else {
+            // TODO: factor in line offset and pagination here
+            editor_state.cursor_state.y += 1;
+            // editor_state.cursor_state.x stays the same because the above line is longer than this line
+            editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
+            editor_state.cursor_state.clip_right = false;
+            editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y, editor_state.printable_width, editor_state.line_wrap);
+        }
+    } else {
+        // do nothing, we can't go any further up in the document
+    }
+    editor_state
+}
+
+fn move_cursor_up(mut editor_state: EditorState) -> EditorState {
+    // first we have to commit the working buffer to the piece table
+    if editor_state.running_buffer.len() > 0 {
+        (editor_state.add_buffer, editor_state.piece_table) = insert_table(editor_state.add_buffer, editor_state.piece_table, &editor_state.running_buffer, editor_state.insert_index);
+        // update the insert position to the *end* of the editor_state.running_buffer
+        if editor_state.insert_index < read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer).len() + editor_state.running_buffer.len() {
+            editor_state.insert_index += editor_state.running_buffer.len();
+        }
+        editor_state.running_buffer = "".to_string();
+    }
+    // now we can actually update the cursor and related variables
+    if editor_state.cursor_state.y + editor_state.line_offset > 0 {
+        // clip to end of line if we're at the end of a line
+        if editor_state.cursor_state.x == get_width_of_line(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.y) {
+            editor_state.cursor_state.clip_right = true;
+        }
+        // figure out where to jump in the line above
+        let length_of_above_line = get_width_of_line(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.y + editor_state.line_offset - 1);
+        // if at end of a line, go to end of above line
+        if editor_state.cursor_state.clip_right || editor_state.cursor_state.x >= length_of_above_line {
+            // TODO: factor in line offset and pagination here
+            editor_state.cursor_state.y -= 1;
+            editor_state.cursor_state.x = length_of_above_line;
+            editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
+            editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y, editor_state.printable_width, editor_state.line_wrap);
+        // if in middle of a line, go to same position in above line
+        } else {
+            // TODO: factor in line offset and pagination here
+            editor_state.cursor_state.y -= 1;
+            // editor_state.cursor_state.x stays the same because the above line is longer than this line
+            editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
+            editor_state.cursor_state.clip_right = false;
+            editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y, editor_state.printable_width, editor_state.line_wrap);
+        }
+    } else {
+        // do nothing, we can't go any further up in the document
+    }
+    editor_state
+}
+
+fn process_text_input(mut editor_state: EditorState, c: KeyCode, _m: KeyModifiers) -> EditorState {
+    // catch-all for spaces, newlines, and characters to add to the buffer
+    // keep track of where we started typing on the screen. You can't insert by the cursor position
+    // because the cursor will move as you type, but we're not committing each character to the
+    // piece table one at a time.
+    if editor_state.running_buffer.len() == 0 {
+        editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y + editor_state.line_offset, editor_state.printable_width, editor_state.line_wrap);
+    }
+    match c {
+        KeyCode::Char(' ') => {
+            editor_state.running_buffer.push(' ');
+            (editor_state.add_buffer, editor_state.piece_table) = insert_table(editor_state.add_buffer, editor_state.piece_table, &editor_state.running_buffer, editor_state.insert_index);
+            editor_state.running_buffer = "".to_string();
+            editor_state.cursor_state.x += 1;
+            editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
+        },
+        KeyCode::Enter => {
+            editor_state.running_buffer.push('\n');
+            (editor_state.add_buffer, editor_state.piece_table) = insert_table(editor_state.add_buffer, editor_state.piece_table, &editor_state.running_buffer, editor_state.insert_index);
+            editor_state.insert_index += editor_state.running_buffer.len();
+            editor_state.running_buffer = "".to_string();
+            editor_state.cursor_state.desired_x = 0;
+            editor_state.cursor_state.x = 0;
+            editor_state.cursor_state.y += 1;
+        },
+        KeyCode::Char(c) => {
+            editor_state.running_buffer.push(c);
+            editor_state.cursor_state.desired_x += 1;
+            editor_state.cursor_state.x += 1;
+        },
+        _ => (),
+    }
+    editor_state
+}
+
 fn update_editor_state(mut editor_state: EditorState) -> EditorState {
     let mut stdout = stdout();
     enable_raw_mode().unwrap();
@@ -328,182 +504,31 @@ fn update_editor_state(mut editor_state: EditorState) -> EditorState {
             code: KeyCode::Left,
             modifiers: _,
         }) => {
-            // first we have to commit the working buffer to the piece table
-            if editor_state.running_buffer.len() > 0 {
-                (editor_state.add_buffer, editor_state.piece_table) = insert_table(editor_state.add_buffer, editor_state.piece_table, &editor_state.running_buffer, editor_state.insert_index);
-                // update the insert position to the *end* of the editor_state.running_buffer
-                editor_state.insert_index += editor_state.running_buffer.len();
-                editor_state.running_buffer = "".to_string();
-            }
-            if editor_state.insert_index > 0 {
-                editor_state.insert_index -= 1;
-            }
-            // now we can actually update the cursor and related variables
-            if editor_state.cursor_state.x == 0 {
-                if editor_state.cursor_state.y > 0 {
-                    (editor_state.cursor_state.x, editor_state.cursor_state.y) = get_position_of_offset(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.insert_index, editor_state.printable_width, editor_state.line_wrap);
-                    // don't forget to take pagination into consideration. Absolute length may not be the real height on screen
-                    editor_state.cursor_state.y -= editor_state.line_offset;
-                    editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
-                } else {
-                    // don't try to move beyond the start of the document
-                }
-            }  else {
-                // moving the cursor on the current line is easy
-                editor_state.cursor_state.x -= 1;
-                editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
-                editor_state.cursor_state.clip_right = false;
-            }
+            editor_state = move_cursor_left(editor_state);
         },
         Event::Key(KeyEvent {
             code: KeyCode::Right,
             modifiers: _,
         }) => {
-            // first we have to commit the working buffer to the piece table
-            if editor_state.running_buffer.len() > 0 {
-                (editor_state.add_buffer, editor_state.piece_table) = insert_table(editor_state.add_buffer, editor_state.piece_table, &editor_state.running_buffer, editor_state.insert_index);
-                // update the insert position to the *end* of the editor_state.running_buffer
-                if editor_state.insert_index < read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer).len() + editor_state.running_buffer.len() {
-                    editor_state.insert_index += editor_state.running_buffer.len();
-                }
-                editor_state.running_buffer = "".to_string();
-            }
-            // now we can actually update the cursor and related variables
-            if editor_state.cursor_state.x == get_width_of_line(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.y + editor_state.line_offset) {
-                if editor_state.insert_index + 1 < read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer).len() {
-                    editor_state.insert_index += 1;
-                    (editor_state.cursor_state.x, editor_state.cursor_state.y) = get_position_of_offset(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.insert_index, editor_state.printable_width, editor_state.line_wrap);
-                    // don't forget to take pagination into consideration. Absolute length may not be the real height on screen
-                    editor_state.cursor_state.y -= editor_state.line_offset;
-                    editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
-                } else {
-                    // do nothing when you're at the end of the last line
-                }
-            } else {
-                // moving the cursor on the current line is easy
-                editor_state.insert_index += 1;
-                editor_state.cursor_state.x += 1;
-                editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
-                editor_state.cursor_state.clip_right = false;
-            }
+            editor_state = move_cursor_right(editor_state);
         },
         Event::Key(KeyEvent {
             code: KeyCode::Up,
             modifiers: _,
         }) => {
-            // first we have to commit the working buffer to the piece table
-            if editor_state.running_buffer.len() > 0 {
-                (editor_state.add_buffer, editor_state.piece_table) = insert_table(editor_state.add_buffer, editor_state.piece_table, &editor_state.running_buffer, editor_state.insert_index);
-                // update the insert position to the *end* of the editor_state.running_buffer
-                if editor_state.insert_index < read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer).len() + editor_state.running_buffer.len() {
-                    editor_state.insert_index += editor_state.running_buffer.len();
-                }
-                editor_state.running_buffer = "".to_string();
-            }
-            // now we can actually update the cursor and related variables
-            if editor_state.cursor_state.y + editor_state.line_offset > 0 {
-                // clip to end of line if we're at the end of a line
-                if editor_state.cursor_state.x == get_width_of_line(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.y) {
-                    editor_state.cursor_state.clip_right = true;
-                }
-                // figure out where to jump in the line above
-                let length_of_above_line = get_width_of_line(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.y + editor_state.line_offset - 1);
-                // if at end of a line, go to end of above line
-                if editor_state.cursor_state.clip_right || editor_state.cursor_state.x >= length_of_above_line {
-                    // TODO: factor in line offset and pagination here
-                    editor_state.cursor_state.y -= 1;
-                    editor_state.cursor_state.x = length_of_above_line;
-                    editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
-                    editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y, editor_state.printable_width, editor_state.line_wrap);
-                // if in middle of a line, go to same position in above line
-                } else {
-                    // TODO: factor in line offset and pagination here
-                    editor_state.cursor_state.y -= 1;
-                    // editor_state.cursor_state.x stays the same because the above line is longer than this line
-                    editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
-                    editor_state.cursor_state.clip_right = false;
-                    editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y, editor_state.printable_width, editor_state.line_wrap);
-                }
-            } else {
-                // do nothing, we can't go any further up in the document
-            }
+            editor_state = move_cursor_up(editor_state);
         },
         Event::Key(KeyEvent {
             code: KeyCode::Down,
             modifiers: _,
         }) => {
-            // first we have to commit the working buffer to the piece table
-            if editor_state.running_buffer.len() > 0 {
-                (editor_state.add_buffer, editor_state.piece_table) = insert_table(editor_state.add_buffer, editor_state.piece_table, &editor_state.running_buffer, editor_state.insert_index);
-                // update the insert position to the *end* of the editor_state.running_buffer
-                if editor_state.insert_index < read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer).len() + editor_state.running_buffer.len() {
-                    editor_state.insert_index += editor_state.running_buffer.len();
-                }
-                editor_state.running_buffer = "".to_string();
-            }
-            // now we can actually update the cursor and related variables
-            if editor_state.cursor_state.y + editor_state.line_offset < get_number_of_lines(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer)) {
-                // clip to end of line if we're at the end of a line
-                if editor_state.cursor_state.x == get_width_of_line(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.y) {
-                    editor_state.cursor_state.clip_right = true;
-                }
-                // figure out where to jump in the line below
-                let length_of_below_line = get_width_of_line(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.y + editor_state.line_offset + 1);
-                // if at end of a line, go to end of below line
-                if editor_state.cursor_state.clip_right || editor_state.cursor_state.x >= length_of_below_line {
-                    // TODO: factor in line offset and pagination here
-                    editor_state.cursor_state.y += 1;
-                    editor_state.cursor_state.x = length_of_below_line;
-                    editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
-                    editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y, editor_state.printable_width, editor_state.line_wrap);
-                // if in middle of a line, go to same position in above line
-                } else {
-                    // TODO: factor in line offset and pagination here
-                    editor_state.cursor_state.y += 1;
-                    // editor_state.cursor_state.x stays the same because the above line is longer than this line
-                    editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
-                    editor_state.cursor_state.clip_right = false;
-                    editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y, editor_state.printable_width, editor_state.line_wrap);
-                }
-            } else {
-                // do nothing, we can't go any further up in the document
-            }
+            editor_state = move_cursor_down(editor_state);
         },
         Event::Key(KeyEvent {
             code: c,
-            modifiers: _m
+            modifiers: m
         }) => {
-            // catch-all for spaces, newlines, and characters to add to the buffer
-            // keep track of where we started typing on the screen. You can't insert by the cursor position
-            // because the cursor will move as you type, but we're not committing each character to the
-            // piece table one at a time.
-            if editor_state.running_buffer.len() == 0 {
-                editor_state.insert_index = get_offset_of_position(&read_table(&editor_state.piece_table, &editor_state.original_buffer, &editor_state.add_buffer), editor_state.cursor_state.x, editor_state.cursor_state.y + editor_state.line_offset, editor_state.printable_width, editor_state.line_wrap);
-            }
-            match c {
-                KeyCode::Char(' ') => {
-                    editor_state.running_buffer.push(' ');
-                    (editor_state.add_buffer, editor_state.piece_table) = insert_table(editor_state.add_buffer, editor_state.piece_table, &editor_state.running_buffer, editor_state.insert_index);
-                    editor_state.running_buffer = "".to_string();
-                    editor_state.cursor_state.x += 1;
-                    editor_state.cursor_state.desired_x = editor_state.cursor_state.x;
-                },
-                KeyCode::Enter => {
-                    editor_state.running_buffer.push('\n');
-                    (editor_state.add_buffer, editor_state.piece_table) = insert_table(editor_state.add_buffer, editor_state.piece_table, &editor_state.running_buffer, editor_state.insert_index);
-                    editor_state.insert_index += editor_state.running_buffer.len();
-                    editor_state.running_buffer = "".to_string();
-                    editor_state.cursor_state.desired_x = 0;
-                    editor_state.cursor_state.x = 0;
-                    editor_state.cursor_state.y += 1;
-                },
-                KeyCode::Char(c) => {
-                    editor_state.running_buffer.push(c);
-                    editor_state.cursor_state.desired_x += 1;
-                    editor_state.cursor_state.x += 1;
-                },
-                _ => (),
-            }
+            editor_state = process_text_input(editor_state, c, m);
         },
         _ => (),
     }
