@@ -612,7 +612,6 @@ fn render_editor(editor_state: &EditorState) {
     // cut off the display_buffer at the end of the page
     // TODO - make sure this isn't off by one
     paginated_display = String::from_utf8(paginated_display.as_bytes().split_at(end_of_page).0.to_vec()).unwrap();
-    // TODO - perform any line-wrapping now
     paginated_display = split_lines_wrapped(paginated_display, editor_state.printable_height, editor_state.printable_width, editor_state.line_wrap);
     // display the paginated, line-wrapped screen
     println!("{}", paginated_display);
